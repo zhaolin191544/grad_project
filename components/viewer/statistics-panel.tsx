@@ -573,7 +573,7 @@ function CostTab({
                     borderRadius: "8px",
                     border: "1px solid #e5e7eb",
                   }}
-                  formatter={(value: number) => [`¥${value.toLocaleString()}`, "造价"]}
+                  formatter={(value: any) => [`¥${Number(value).toLocaleString()}`, "造价"]}
                 />
                 <Bar
                   dataKey="cost"

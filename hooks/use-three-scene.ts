@@ -14,9 +14,14 @@ export interface ThreeSceneContext {
   clippingPlane: THREE.Plane
 }
 
-export function useThreeScene(containerRef: React.RefObject<HTMLDivElement | null>) {
+export function useThreeScene(
+  containerRef: React.RefObject<HTMLDivElement | null>,
+  onFrame?: () => void
+) {
   const ctxRef = useRef<ThreeSceneContext | null>(null)
   const animationRef = useRef<number>(0)
+  const onFrameRef = useRef(onFrame)
+  onFrameRef.current = onFrame
 
   useEffect(() => {
     const container = containerRef.current
@@ -87,6 +92,7 @@ export function useThreeScene(containerRef: React.RefObject<HTMLDivElement | nul
     const animate = () => {
       animationRef.current = requestAnimationFrame(animate)
       controls.update()
+      onFrameRef.current?.()
 
       // Sync axes camera with main camera
       const dir = new THREE.Vector3()

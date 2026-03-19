@@ -12,6 +12,7 @@ import {
   LogOut,
   Menu,
   History,
+  Gauge,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -47,6 +48,11 @@ const navItems = [
     title: "History",
     href: "/dashboard/history",
     icon: History,
+  },
+  {
+    title: "Benchmark",
+    href: "/dashboard/benchmark",
+    icon: Gauge,
   },
   {
     title: "Settings",

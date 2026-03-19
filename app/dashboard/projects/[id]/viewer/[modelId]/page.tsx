@@ -6,17 +6,21 @@ import { useThreeScene } from "@/hooks/use-three-scene"
 import { useIFCLoader } from "@/hooks/use-ifc-loader"
 import { useModelContext } from "@/hooks/use-model-context"
 import { useQuantityStats } from "@/hooks/use-quantity-stats"
+import { useFPSMonitor } from "@/hooks/use-fps-monitor"
+import { usePerfTracker } from "@/hooks/use-perf-tracker"
 import { ViewerToolbar } from "@/components/viewer/viewer-toolbar"
 import { PropertiesPanel } from "@/components/viewer/properties-panel"
 import { SpatialTree } from "@/components/viewer/spatial-tree"
 import { ChatPanel, type ViewerCommand } from "@/components/chat/chat-panel"
 import { StatisticsPanel } from "@/components/viewer/statistics-panel"
+import { PerformancePanel } from "@/components/viewer/performance-panel"
 import { Button } from "@/components/ui/button"
 import {
   ArrowLeft,
   Loader2,
   MessageSquare,
   BarChart3,
+  Activity,
   X,
 } from "lucide-react"
 import Link from "next/link"
@@ -28,8 +32,18 @@ export default function ViewerPage() {
   const modelId = params.modelId as string
 
   const containerRef = useRef<HTMLDivElement>(null)
+  const { fps, tick } = useFPSMonitor()
+  const {
+    metrics: perfMetrics,
+    startModelLoad,
+    endModelLoad,
+    startAIRequest,
+    endAIRequest,
+    updateRendererStats,
+    updateModelStats,
+  } = usePerfTracker()
   const { ctxRef, frameModel, setPresetView, takeScreenshot, captureThumb } =
-    useThreeScene(containerRef)
+    useThreeScene(containerRef, tick)
 
   const {
     modelRef,
@@ -56,6 +70,7 @@ export default function ViewerPage() {
   const [clippingHeight, setClippingHeight] = useState(10)
   const [chatOpen, setChatOpen] = useState(false)
   const [statsOpen, setStatsOpen] = useState(false)
+  const [perfOpen, setPerfOpen] = useState(false)
   const [modelName, setModelName] = useState("")
   const [loadError, setLoadError] = useState("")
 
@@ -69,6 +84,16 @@ export default function ViewerPage() {
     modelStats,
     elementTypeMap
   )
+
+  // Periodically update renderer stats
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (ctxRef.current) {
+        updateRendererStats(ctxRef.current.renderer)
+      }
+    }, 2000)
+    return () => clearInterval(interval)
+  }, [ctxRef, updateRendererStats])
 
   // Load model from server
   useEffect(() => {
@@ -95,9 +120,21 @@ export default function ViewerPage() {
 
         if (cancelled) return
 
+        startModelLoad()
         const loaded = await loadModel(model.fileUrl)
         if (!cancelled) {
+          endModelLoad(model.fileSize)
           frameModel(loaded)
+
+          // Count vertices for perf stats
+          let verts = 0
+          loaded.traverse((child: any) => {
+            if (child.isMesh && child.geometry) {
+              const pos = child.geometry.getAttribute("position")
+              if (pos) verts += pos.count
+            }
+          })
+          updateModelStats(verts)
 
           // Capture thumbnail after rendering settles
           setTimeout(() => {
@@ -258,6 +295,23 @@ export default function ViewerPage() {
         </span>
         <div className="flex-1" />
 
+        {/* Performance toggle */}
+        <Button
+          variant={perfOpen ? "default" : "ghost"}
+          size="icon"
+          className="h-8 w-8"
+          onClick={() => {
+            setPerfOpen(!perfOpen)
+            if (!perfOpen) { setChatOpen(false); setStatsOpen(false) }
+          }}
+        >
+          {perfOpen ? (
+            <X className="h-4 w-4" />
+          ) : (
+            <Activity className="h-4 w-4" />
+          )}
+        </Button>
+
         {/* Statistics toggle */}
         <Button
           variant={statsOpen ? "default" : "ghost"}
@@ -265,7 +319,7 @@ export default function ViewerPage() {
           className="h-8 w-8"
           onClick={() => {
             setStatsOpen(!statsOpen)
-            if (!statsOpen) setChatOpen(false)
+            if (!statsOpen) { setChatOpen(false); setPerfOpen(false) }
           }}
         >
           {statsOpen ? (
@@ -282,7 +336,7 @@ export default function ViewerPage() {
           className="h-8 w-8"
           onClick={() => {
             setChatOpen(!chatOpen)
-            if (!chatOpen) setStatsOpen(false)
+            if (!chatOpen) { setStatsOpen(false); setPerfOpen(false) }
           }}
         >
           {chatOpen ? (
@@ -356,6 +410,13 @@ export default function ViewerPage() {
             />
           </div>
 
+          {/* Performance Panel (overlay on viewport) */}
+          {perfOpen && (
+            <div className="absolute right-0 top-0 z-20 h-full w-80 border-l bg-background/95 shadow-lg backdrop-blur-sm">
+              <PerformancePanel fps={fps} metrics={perfMetrics} />
+            </div>
+          )}
+
           {/* Statistics Panel (overlay on viewport) */}
           {statsOpen && (
             <div className="absolute right-0 top-0 z-20 h-full w-96 border-l bg-background/95 shadow-lg backdrop-blur-sm">
@@ -383,6 +444,8 @@ export default function ViewerPage() {
                 modelId={modelId}
                 modelContext={modelContext}
                 onCommand={handleAICommand}
+                onAIStart={startAIRequest}
+                onAIEnd={endAIRequest}
               />
             </div>
           )}

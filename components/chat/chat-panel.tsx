@@ -32,6 +32,8 @@ interface ChatPanelProps {
   modelId: string
   modelContext: ModelContext | null
   onCommand?: (command: ViewerCommand) => void
+  onAIStart?: () => void
+  onAIEnd?: () => void
 }
 
 export interface ModelContext {
@@ -68,7 +70,7 @@ const SUGGESTION_PROMPTS = [
   "切换到顶视图",
 ]
 
-export function ChatPanel({ modelId, modelContext, onCommand }: ChatPanelProps) {
+export function ChatPanel({ modelId, modelContext, onCommand, onAIStart, onAIEnd }: ChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState("")
   const [isStreaming, setIsStreaming] = useState(false)
@@ -138,6 +140,7 @@ export function ChatPanel({ modelId, modelContext, onCommand }: ChatPanelProps) 
       try {
         const controller = new AbortController()
         abortRef.current = controller
+        onAIStart?.()
 
         const res = await fetch("/api/chat", {
           method: "POST",
@@ -234,9 +237,10 @@ export function ChatPanel({ modelId, modelContext, onCommand }: ChatPanelProps) 
       } finally {
         setIsStreaming(false)
         abortRef.current = null
+        onAIEnd?.()
       }
     },
-    [messages, isStreaming, modelContext, modelId, onCommand]
+    [messages, isStreaming, modelContext, modelId, onCommand, onAIStart, onAIEnd]
   )
 
   // Listen for AI insight requests from statistics panel

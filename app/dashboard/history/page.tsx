@@ -113,7 +113,7 @@ export default async function HistoryPage() {
   for (const c of recentComments) {
     // Only add if not already tracked in viewHistory
     const alreadyTracked = viewHistory.some(
-      (v) =>
+      (v: { action: string; createdAt: Date }) =>
         v.action === "annotate" &&
         Math.abs(v.createdAt.getTime() - c.createdAt.getTime()) < 2000
     )
@@ -145,7 +145,7 @@ export default async function HistoryPage() {
 
   // Stats
   const stats = {
-    views: viewHistory.filter((v) => v.action === "view").length,
+    views: viewHistory.filter((v: { action: string }) => v.action === "view").length,
     annotations: recentComments.length,
     chats: recentChats.length,
   }
