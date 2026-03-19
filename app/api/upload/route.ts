@@ -43,7 +43,7 @@ export async function POST(req: Request) {
 
   const uniqueName = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`
   const filePath = path.join(uploadsDir, uniqueName)
-  const fileUrl = `/uploads/${uniqueName}`
+  const fileUrl = `/api/uploads/${uniqueName}`
 
   const bytes = await file.arrayBuffer()
   await writeFile(filePath, Buffer.from(bytes))

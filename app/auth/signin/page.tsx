@@ -25,10 +25,40 @@ export default function SignInPage() {
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
 
+  const [unverified, setUnverified] = useState(false)
+  const [resending, setResending] = useState(false)
+  const [resent, setResent] = useState(false)
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError("")
+    setUnverified(false)
+    setResent(false)
+
+    // Pre-check: verify credentials and email status
+    try {
+      const checkRes = await fetch("/api/auth/check-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      })
+      const checkData = await checkRes.json()
+
+      if (checkData.status === "invalid") {
+        setError("Invalid email or password")
+        setLoading(false)
+        return
+      }
+
+      if (checkData.status === "unverified") {
+        setUnverified(true)
+        setLoading(false)
+        return
+      }
+    } catch {
+      // If check fails, proceed with normal login
+    }
 
     const result = await signIn("credentials", {
       email,
@@ -45,6 +75,20 @@ export default function SignInPage() {
     }
   }
 
+  const handleResendVerification = async () => {
+    setResending(true)
+    try {
+      await fetch("/api/auth/resend-verification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      })
+      setResent(true)
+    } finally {
+      setResending(false)
+    }
+  }
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/30 px-4">
       <Card className="w-full max-w-md">
@@ -56,25 +100,46 @@ export default function SignInPage() {
           <CardDescription>Sign in to IFC Model Platform</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <Button
-            variant="outline"
-            className="w-full"
-            onClick={() => signIn("github", { callbackUrl: "/dashboard" })}
-          >
-            <Github className="mr-2 h-4 w-4" />
-            Sign in with GitHub
-          </Button>
+          {process.env.NEXT_PUBLIC_GITHUB_ENABLED === "true" && (
+            <>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => signIn("github", { callbackUrl: "/dashboard" })}
+              >
+                <Github className="mr-2 h-4 w-4" />
+                Sign in with GitHub
+              </Button>
 
-          <div className="flex items-center gap-4">
-            <Separator className="flex-1" />
-            <span className="text-xs text-muted-foreground">OR</span>
-            <Separator className="flex-1" />
-          </div>
+              <div className="flex items-center gap-4">
+                <Separator className="flex-1" />
+                <span className="text-xs text-muted-foreground">OR</span>
+                <Separator className="flex-1" />
+              </div>
+            </>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
               <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
                 {error}
+              </div>
+            )}
+            {unverified && (
+              <div className="rounded-md bg-yellow-500/10 p-3 text-sm text-yellow-700 dark:text-yellow-400">
+                <p>Your email is not verified yet. Please check your inbox.</p>
+                {resent ? (
+                  <p className="mt-1 font-medium">Verification email resent!</p>
+                ) : (
+                  <button
+                    type="button"
+                    className="mt-1 font-medium underline"
+                    onClick={handleResendVerification}
+                    disabled={resending}
+                  >
+                    {resending ? "Sending..." : "Resend verification email"}
+                  </button>
+                )}
               </div>
             )}
             <div className="space-y-2">

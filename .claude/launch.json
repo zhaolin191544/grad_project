@@ -1,0 +1,18 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Next.js Dev Server",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "dev"],
+      "port": 3000,
+      "autoPort": true
+    },
+    {
+      "name": "Prisma Local Database",
+      "runtimeExecutable": "bunx",
+      "runtimeArgs": ["prisma", "dev"],
+      "port": 51213
+    }
+  ]
+}

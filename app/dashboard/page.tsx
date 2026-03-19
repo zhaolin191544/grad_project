@@ -109,7 +109,7 @@ export default async function DashboardPage() {
             </div>
           ) : (
             <div className="space-y-3">
-              {recentProjects.map((project) => (
+              {recentProjects.map((project: { id: string; name: string; description: string | null; _count: { models: number } }) => (
                 <Link
                   key={project.id}
                   href={`/dashboard/projects/${project.id}`}

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server"
 import { db } from "@/lib/db"
 import bcrypt from "bcryptjs"
+import { generateVerificationToken } from "@/lib/tokens"
+import { sendVerificationEmail } from "@/lib/mail"
 
 export async function POST(req: Request) {
   try {
@@ -41,11 +43,24 @@ export async function POST(req: Request) {
       },
     })
 
+    // Send verification email
+    try {
+      const verificationToken = await generateVerificationToken(email)
+      await sendVerificationEmail(email, verificationToken.token)
+    } catch (emailError) {
+      console.error("[SEND_VERIFICATION_EMAIL_ERROR]", emailError)
+      // Don't fail registration if email fails — user can resend later
+    }
+
     return NextResponse.json(
-      { user: { id: user.id, name: user.name, email: user.email } },
+      {
+        user: { id: user.id, name: user.name, email: user.email },
+        message: "Account created. Please check your email to verify your account.",
+      },
       { status: 201 }
     )
-  } catch {
+  } catch (error) {
+    console.error("[REGISTER_ERROR]", error)
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

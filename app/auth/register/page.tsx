@@ -1,7 +1,6 @@
 "use client"
 
 import { useState } from "react"
-import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -14,15 +13,15 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Building2 } from "lucide-react"
+import { Building2, Mail } from "lucide-react"
 
 export default function RegisterPage() {
-  const router = useRouter()
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
+  const [registered, setRegistered] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -44,11 +43,37 @@ export default function RegisterPage() {
         return
       }
 
-      router.push("/auth/signin")
+      setRegistered(true)
     } catch {
       setError("Something went wrong")
       setLoading(false)
     }
+  }
+
+  if (registered) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-muted/30 px-4">
+        <Card className="w-full max-w-md text-center">
+          <CardHeader>
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-primary">
+              <Mail className="h-6 w-6 text-primary-foreground" />
+            </div>
+            <CardTitle className="text-2xl">Check your email</CardTitle>
+            <CardDescription>
+              We&apos;ve sent a verification link to <strong>{email}</strong>.
+              Please click the link to verify your account.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Link href="/auth/signin">
+              <Button variant="outline" className="w-full">
+                Back to sign in
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
 
   return (

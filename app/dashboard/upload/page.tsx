@@ -148,17 +148,20 @@ export default function UploadPage() {
             <p className="mb-4 text-xs text-muted-foreground">
               or click to browse
             </p>
-            <label>
+            <Button
+              variant="outline"
+              size="sm"
+              nativeButton={false}
+              render={<label />}
+            >
               <input
                 type="file"
                 accept=".ifc"
                 className="hidden"
                 onChange={handleFileChange}
               />
-              <Button variant="outline" size="sm" asChild>
-                <span>Choose file</span>
-              </Button>
-            </label>
+              Choose file
+            </Button>
           </div>
 
           {file && (

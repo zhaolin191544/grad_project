@@ -83,7 +83,7 @@ export default async function ProjectDetailPage({
         </Card>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {project.models.map((model) => (
+          {project.models.map((model: { id: string; fileName: string; fileSize: number; createdAt: Date }) => (
             <Card key={model.id} className="transition-shadow hover:shadow-md">
               <CardContent className="p-6">
                 <div className="mb-4 flex items-start justify-between">

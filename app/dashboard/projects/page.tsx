@@ -44,7 +44,7 @@ export default async function ProjectsPage() {
         </Card>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {projects.map((project) => (
+          {projects.map((project: { id: string; name: string; description: string | null; updatedAt: Date; _count: { models: number } }) => (
             <Link key={project.id} href={`/dashboard/projects/${project.id}`}>
               <Card className="transition-shadow hover:shadow-md h-full">
                 <CardContent className="p-6">
