@@ -83,29 +83,40 @@ export default async function ProjectDetailPage({
         </Card>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {project.models.map((model: { id: string; fileName: string; fileSize: number; createdAt: Date }) => (
-            <Card key={model.id} className="transition-shadow hover:shadow-md">
-              <CardContent className="p-6">
-                <div className="mb-4 flex items-start justify-between">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500/10">
-                    <Box className="h-5 w-5 text-blue-500" />
+          {project.models.map((model: { id: string; fileName: string; fileSize: number; thumbnail: string | null; createdAt: Date }) => (
+            <Card key={model.id} className="overflow-hidden transition-shadow hover:shadow-md">
+              {/* Thumbnail */}
+              <div className="relative h-40 bg-gradient-to-b from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-900">
+                {model.thumbnail ? (
+                  <img
+                    src={model.thumbnail}
+                    alt={model.fileName}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center">
+                    <Box className="h-12 w-12 text-muted-foreground/20" />
                   </div>
+                )}
+                <div className="absolute right-2 top-2">
                   <DeleteModelButton modelId={model.id} />
                 </div>
-                <h3 className="mb-1 truncate font-semibold">{model.fileName}</h3>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Badge variant="outline" className="gap-1">
+              </div>
+              <CardContent className="p-4">
+                <h3 className="mb-2 truncate font-semibold">{model.fileName}</h3>
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant="outline" className="gap-1 text-xs">
                     <HardDrive className="h-3 w-3" />
                     {formatFileSize(model.fileSize)}
                   </Badge>
-                  <Badge variant="outline" className="gap-1">
+                  <Badge variant="outline" className="gap-1 text-xs">
                     <Calendar className="h-3 w-3" />
                     {model.createdAt.toLocaleDateString()}
                   </Badge>
                 </div>
                 <Link
                   href={`/dashboard/projects/${id}/viewer/${model.id}`}
-                  className="mt-4 block"
+                  className="mt-3 block"
                 >
                   <Button size="sm" className="w-full gap-2">
                     <Eye className="h-3.5 w-3.5" />

@@ -62,3 +62,36 @@ export async function DELETE(
 
   return NextResponse.json({ success: true })
 }
+
+// PATCH: Update model (e.g., thumbnail)
+export async function PATCH(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params
+  const session = await auth()
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  const model = await db.model.findFirst({
+    where: {
+      id,
+      project: { userId: session.user.id },
+    },
+  })
+
+  if (!model) {
+    return NextResponse.json({ error: "Model not found" }, { status: 404 })
+  }
+
+  const body = await req.json()
+  const updated = await db.model.update({
+    where: { id },
+    data: {
+      ...(body.thumbnail !== undefined && { thumbnail: body.thumbnail }),
+    },
+  })
+
+  return NextResponse.json(updated)
+}

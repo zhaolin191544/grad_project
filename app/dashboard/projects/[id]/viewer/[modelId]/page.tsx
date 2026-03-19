@@ -5,15 +5,18 @@ import { useParams } from "next/navigation"
 import { useThreeScene } from "@/hooks/use-three-scene"
 import { useIFCLoader } from "@/hooks/use-ifc-loader"
 import { useModelContext } from "@/hooks/use-model-context"
+import { useQuantityStats } from "@/hooks/use-quantity-stats"
 import { ViewerToolbar } from "@/components/viewer/viewer-toolbar"
 import { PropertiesPanel } from "@/components/viewer/properties-panel"
 import { SpatialTree } from "@/components/viewer/spatial-tree"
 import { ChatPanel, type ViewerCommand } from "@/components/chat/chat-panel"
+import { StatisticsPanel } from "@/components/viewer/statistics-panel"
 import { Button } from "@/components/ui/button"
 import {
   ArrowLeft,
   Loader2,
   MessageSquare,
+  BarChart3,
   X,
 } from "lucide-react"
 import Link from "next/link"
@@ -25,7 +28,7 @@ export default function ViewerPage() {
   const modelId = params.modelId as string
 
   const containerRef = useRef<HTMLDivElement>(null)
-  const { ctxRef, frameModel, setPresetView, takeScreenshot } =
+  const { ctxRef, frameModel, setPresetView, takeScreenshot, captureThumb } =
     useThreeScene(containerRef)
 
   const {
@@ -52,8 +55,12 @@ export default function ViewerPage() {
   const [clipping, setClippingState] = useState(false)
   const [clippingHeight, setClippingHeight] = useState(10)
   const [chatOpen, setChatOpen] = useState(false)
+  const [statsOpen, setStatsOpen] = useState(false)
   const [modelName, setModelName] = useState("")
   const [loadError, setLoadError] = useState("")
+
+  // Quantity statistics for Phase 4
+  const quantityData = useQuantityStats(spatialTree, elementTypeMap, modelRef)
 
   // Build model context for AI
   const modelContext = useModelContext(
@@ -91,6 +98,30 @@ export default function ViewerPage() {
         const loaded = await loadModel(model.fileUrl)
         if (!cancelled) {
           frameModel(loaded)
+
+          // Capture thumbnail after rendering settles
+          setTimeout(() => {
+            if (cancelled) return
+            const thumb = captureThumb()
+            if (thumb) {
+              fetch(`/api/models/${modelId}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ thumbnail: thumb }),
+              }).catch(() => {})
+            }
+          }, 2000)
+
+          // Record view history
+          fetch("/api/history", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              modelId,
+              action: "view",
+              detail: `Viewed model: ${model.fileName}`,
+            }),
+          }).catch(() => {})
         }
       } catch (err) {
         if (!cancelled) {
@@ -227,12 +258,32 @@ export default function ViewerPage() {
         </span>
         <div className="flex-1" />
 
+        {/* Statistics toggle */}
+        <Button
+          variant={statsOpen ? "default" : "ghost"}
+          size="icon"
+          className="h-8 w-8"
+          onClick={() => {
+            setStatsOpen(!statsOpen)
+            if (!statsOpen) setChatOpen(false)
+          }}
+        >
+          {statsOpen ? (
+            <X className="h-4 w-4" />
+          ) : (
+            <BarChart3 className="h-4 w-4" />
+          )}
+        </Button>
+
         {/* AI Chat toggle */}
         <Button
           variant={chatOpen ? "default" : "ghost"}
           size="icon"
           className="h-8 w-8"
-          onClick={() => setChatOpen(!chatOpen)}
+          onClick={() => {
+            setChatOpen(!chatOpen)
+            if (!chatOpen) setStatsOpen(false)
+          }}
         >
           {chatOpen ? (
             <X className="h-4 w-4" />
@@ -305,6 +356,26 @@ export default function ViewerPage() {
             />
           </div>
 
+          {/* Statistics Panel (overlay on viewport) */}
+          {statsOpen && (
+            <div className="absolute right-0 top-0 z-20 h-full w-96 border-l bg-background/95 shadow-lg backdrop-blur-sm">
+              <StatisticsPanel
+                data={quantityData}
+                onRequestAIInsight={(summary) => {
+                  setStatsOpen(false)
+                  setChatOpen(true)
+                  // Delay to let chat panel mount, then trigger message
+                  setTimeout(() => {
+                    const event = new CustomEvent("ai-insight-request", {
+                      detail: { message: summary },
+                    })
+                    window.dispatchEvent(event)
+                  }, 300)
+                }}
+              />
+            </div>
+          )}
+
           {/* AI Chat Panel (overlay on viewport) */}
           {chatOpen && (
             <div className="absolute right-0 top-0 z-20 h-full w-96 border-l bg-background/95 shadow-lg backdrop-blur-sm">
@@ -322,6 +393,7 @@ export default function ViewerPage() {
           <PropertiesPanel
             selectedElement={selectedElement}
             modelStats={modelStats}
+            modelId={modelId}
             onClearSelection={clearSelection}
           />
         </div>

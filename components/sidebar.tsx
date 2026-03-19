@@ -11,6 +11,7 @@ import {
   Settings,
   LogOut,
   Menu,
+  History,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -41,6 +42,11 @@ const navItems = [
     title: "Upload",
     href: "/dashboard/upload",
     icon: Upload,
+  },
+  {
+    title: "History",
+    href: "/dashboard/history",
+    icon: History,
   },
   {
     title: "Settings",

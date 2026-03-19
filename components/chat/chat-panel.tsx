@@ -239,6 +239,18 @@ export function ChatPanel({ modelId, modelContext, onCommand }: ChatPanelProps) 
     [messages, isStreaming, modelContext, modelId, onCommand]
   )
 
+  // Listen for AI insight requests from statistics panel
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      if (detail?.message) {
+        sendMessage(detail.message)
+      }
+    }
+    window.addEventListener("ai-insight-request", handler)
+    return () => window.removeEventListener("ai-insight-request", handler)
+  }, [sendMessage])
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()

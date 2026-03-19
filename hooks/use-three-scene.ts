@@ -39,6 +39,7 @@ export function useThreeScene(containerRef: React.RefObject<HTMLDivElement | nul
     const renderer = new THREE.WebGLRenderer({
       antialias: true,
       alpha: true,
+      preserveDrawingBuffer: true,
     })
     renderer.setSize(container.clientWidth, container.clientHeight)
     renderer.setPixelRatio(window.devicePixelRatio)
@@ -207,5 +208,13 @@ export function useThreeScene(containerRef: React.RefObject<HTMLDivElement | nul
     link.click()
   }, [])
 
-  return { ctxRef, frameModel, setPresetView, takeScreenshot }
+  const captureThumb = useCallback((): string | null => {
+    const ctx = ctxRef.current
+    if (!ctx) return null
+
+    ctx.renderer.render(ctx.scene, ctx.camera)
+    return ctx.renderer.domElement.toDataURL("image/jpeg", 0.6)
+  }, [])
+
+  return { ctxRef, frameModel, setPresetView, takeScreenshot, captureThumb }
 }
