@@ -18,7 +18,7 @@ export function PropertiesPanel({
   onClearSelection,
 }: PropertiesPanelProps) {
   return (
-    <div className="flex h-full w-72 flex-col border-l bg-background">
+    <div className="flex h-full flex-col">
       <div className="border-b p-4">
         <h3 className="font-semibold">Properties</h3>
       </div>

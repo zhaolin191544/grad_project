@@ -47,6 +47,7 @@ export function useIFCLoader(ctxRef: React.RefObject<ThreeSceneContext | null>) 
   const [selectedElement, setSelectedElement] = useState<IFCElementInfo | null>(null)
   const [spatialTree, setSpatialTree] = useState<SpatialNode | null>(null)
   const [modelStats, setModelStats] = useState<ModelStats | null>(null)
+  const [elementTypeMap, setElementTypeMap] = useState<Map<number, { type: string; name?: string }> | null>(null)
 
   const countNodes = useCallback((node: SpatialNode): ModelStats => {
     let elementCount = 0
@@ -210,11 +211,27 @@ export function useIFCLoader(ctxRef: React.RefObject<ThreeSceneContext | null>) 
         meshToExpressIds,
       }
 
-      // Build spatial tree
+      // Build spatial tree and element type map
       try {
         const tree = buildSpatialTree(ifcApi, modelID, WebIFC)
         setSpatialTree(tree)
         setModelStats(countNodes(tree))
+
+        // Build element type map for AI context
+        const typeMap = new Map<number, { type: string; name?: string }>()
+        expressIdToMesh.forEach((_, eid) => {
+          try {
+            const line = ifcApi.GetLine(modelID, eid)
+            const typeName = ifcApi.GetNameFromTypeCode(line.type) || "Unknown"
+            typeMap.set(eid, {
+              type: typeName.toUpperCase(),
+              name: line.Name?.value || line.LongName?.value || undefined,
+            })
+          } catch {
+            // skip
+          }
+        })
+        setElementTypeMap(typeMap)
       } catch (e) {
         console.warn("Failed to build spatial tree:", e)
       }
@@ -396,6 +413,47 @@ export function useIFCLoader(ctxRef: React.RefObject<ThreeSceneContext | null>) 
     [ctxRef]
   )
 
+  const highlightByType = useCallback(
+    (typeName: string) => {
+      const ctx = ctxRef.current
+      const data = modelDataRef.current
+      const typeMap = elementTypeMap
+      if (!ctx || !data || !typeMap) return
+
+      // Remove previous highlight
+      clearHighlight(ctx)
+
+      // Find all meshes of the given type
+      const matchingMeshes: THREE.Mesh[] = []
+      typeMap.forEach((info, eid) => {
+        if (info.type.toUpperCase().includes(typeName.toUpperCase())) {
+          const mesh = data.expressIdToMesh.get(eid)
+          if (mesh) matchingMeshes.push(mesh)
+        }
+      })
+
+      if (matchingMeshes.length === 0) return
+
+      // Merge all geometries into one highlight mesh
+      const group = new THREE.Group()
+      matchingMeshes.forEach((mesh) => {
+        const clone = new THREE.Mesh(mesh.geometry, highlightMaterial)
+        clone.position.copy(mesh.position)
+        clone.rotation.copy(mesh.rotation)
+        clone.scale.copy(mesh.scale)
+        clone.matrix.copy(mesh.matrix)
+        clone.matrixAutoUpdate = false
+        clone.renderOrder = 1
+        group.add(clone)
+      })
+
+      ctx.scene.add(group)
+      // Store group as highlight (reusing ref, cast is fine since we just need remove)
+      highlightMeshRef.current = group as unknown as THREE.Mesh
+    },
+    [ctxRef, elementTypeMap]
+  )
+
   const dispose = useCallback(() => {
     const data = modelDataRef.current
     if (data) {
@@ -426,6 +484,8 @@ export function useIFCLoader(ctxRef: React.RefObject<ThreeSceneContext | null>) 
     setWireframe,
     setXRay,
     setClipping,
+    highlightByType,
+    elementTypeMap,
     dispose,
   }
 }

@@ -1,15 +1,23 @@
 "use client"
 
 import { useRef, useState, useCallback, useEffect } from "react"
-import { useParams, useRouter } from "next/navigation"
+import { useParams } from "next/navigation"
 import { useThreeScene } from "@/hooks/use-three-scene"
 import { useIFCLoader } from "@/hooks/use-ifc-loader"
+import { useModelContext } from "@/hooks/use-model-context"
 import { ViewerToolbar } from "@/components/viewer/viewer-toolbar"
 import { PropertiesPanel } from "@/components/viewer/properties-panel"
 import { SpatialTree } from "@/components/viewer/spatial-tree"
+import { ChatPanel, type ViewerCommand } from "@/components/chat/chat-panel"
 import { Button } from "@/components/ui/button"
-import { ArrowLeft, PanelLeftOpen, PanelRightOpen, Loader2 } from "lucide-react"
+import {
+  ArrowLeft,
+  Loader2,
+  MessageSquare,
+  X,
+} from "lucide-react"
 import Link from "next/link"
+import { cn } from "@/lib/utils"
 
 export default function ViewerPage() {
   const params = useParams()
@@ -17,7 +25,8 @@ export default function ViewerPage() {
   const modelId = params.modelId as string
 
   const containerRef = useRef<HTMLDivElement>(null)
-  const { ctxRef, frameModel, setPresetView, takeScreenshot } = useThreeScene(containerRef)
+  const { ctxRef, frameModel, setPresetView, takeScreenshot } =
+    useThreeScene(containerRef)
 
   const {
     modelRef,
@@ -29,10 +38,12 @@ export default function ViewerPage() {
     loadModel,
     pickElement,
     highlightByExpressId,
+    highlightByType,
     clearSelection,
     setWireframe,
     setXRay,
     setClipping,
+    elementTypeMap,
     dispose,
   } = useIFCLoader(ctxRef)
 
@@ -40,10 +51,17 @@ export default function ViewerPage() {
   const [xray, setXRayState] = useState(false)
   const [clipping, setClippingState] = useState(false)
   const [clippingHeight, setClippingHeight] = useState(10)
-  const [leftPanelOpen, setLeftPanelOpen] = useState(true)
-  const [rightPanelOpen, setRightPanelOpen] = useState(true)
+  const [chatOpen, setChatOpen] = useState(false)
   const [modelName, setModelName] = useState("")
   const [loadError, setLoadError] = useState("")
+
+  // Build model context for AI
+  const modelContext = useModelContext(
+    modelName,
+    spatialTree,
+    modelStats,
+    elementTypeMap
+  )
 
   // Load model from server
   useEffect(() => {
@@ -51,7 +69,6 @@ export default function ViewerPage() {
 
     async function fetchAndLoad() {
       try {
-        // Get model info
         const res = await fetch(`/api/models/${modelId}`)
         if (!res.ok) throw new Error("Model not found")
         const model = await res.json()
@@ -59,7 +76,6 @@ export default function ViewerPage() {
 
         if (cancelled) return
 
-        // Wait for scene to be ready
         const waitForScene = () =>
           new Promise<void>((resolve) => {
             const check = () => {
@@ -72,14 +88,15 @@ export default function ViewerPage() {
 
         if (cancelled) return
 
-        // Load the IFC model
         const loaded = await loadModel(model.fileUrl)
         if (!cancelled) {
           frameModel(loaded)
         }
       } catch (err) {
         if (!cancelled) {
-          setLoadError(err instanceof Error ? err.message : "Failed to load model")
+          setLoadError(
+            err instanceof Error ? err.message : "Failed to load model"
+          )
         }
       }
     }
@@ -102,23 +119,33 @@ export default function ViewerPage() {
     [pickElement]
   )
 
-  const handleToggleWireframe = useCallback(() => {
-    const next = !wireframe
-    setWireframeState(next)
-    setWireframe(next)
-  }, [wireframe, setWireframe])
+  const handleToggleWireframe = useCallback(
+    (force?: boolean) => {
+      const next = force !== undefined ? force : !wireframe
+      setWireframeState(next)
+      setWireframe(next)
+    },
+    [wireframe, setWireframe]
+  )
 
-  const handleToggleXRay = useCallback(() => {
-    const next = !xray
-    setXRayState(next)
-    setXRay(next)
-  }, [xray, setXRay])
+  const handleToggleXRay = useCallback(
+    (force?: boolean) => {
+      const next = force !== undefined ? force : !xray
+      setXRayState(next)
+      setXRay(next)
+    },
+    [xray, setXRay]
+  )
 
-  const handleToggleClipping = useCallback(() => {
-    const next = !clipping
-    setClippingState(next)
-    setClipping(next, clippingHeight)
-  }, [clipping, clippingHeight, setClipping])
+  const handleToggleClipping = useCallback(
+    (force?: boolean, height?: number) => {
+      const next = force !== undefined ? force : !clipping
+      setClippingState(next)
+      if (height !== undefined) setClippingHeight(height)
+      setClipping(next, height ?? clippingHeight)
+    },
+    [clipping, clippingHeight, setClipping]
+  )
 
   const handleClippingHeightChange = useCallback(
     (height: number) => {
@@ -141,6 +168,51 @@ export default function ViewerPage() {
     [highlightByExpressId]
   )
 
+  // Handle AI commands
+  const handleAICommand = useCallback(
+    (command: ViewerCommand) => {
+      switch (command.action) {
+        case "highlightByType":
+          highlightByType(command.params.type as string)
+          break
+        case "setView":
+          setPresetView(
+            command.params.view as "top" | "front" | "iso",
+            modelRef.current
+          )
+          break
+        case "toggleWireframe":
+          handleToggleWireframe(command.params.enabled as boolean)
+          break
+        case "toggleXRay":
+          handleToggleXRay(command.params.enabled as boolean)
+          break
+        case "toggleClipping":
+          handleToggleClipping(
+            command.params.enabled as boolean,
+            command.params.height as number | undefined
+          )
+          break
+        case "highlightElement":
+          highlightByExpressId(command.params.expressID as number)
+          break
+        case "resetView":
+          handleResetView()
+          break
+      }
+    },
+    [
+      highlightByType,
+      setPresetView,
+      modelRef,
+      handleToggleWireframe,
+      handleToggleXRay,
+      handleToggleClipping,
+      highlightByExpressId,
+      handleResetView,
+    ]
+  )
+
   return (
     <div className="flex h-screen flex-col">
       {/* Top bar */}
@@ -154,39 +226,35 @@ export default function ViewerPage() {
           {modelName || "Loading..."}
         </span>
         <div className="flex-1" />
+
+        {/* AI Chat toggle */}
         <Button
-          variant="ghost"
+          variant={chatOpen ? "default" : "ghost"}
           size="icon"
           className="h-8 w-8"
-          onClick={() => setLeftPanelOpen(!leftPanelOpen)}
+          onClick={() => setChatOpen(!chatOpen)}
         >
-          <PanelLeftOpen className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8"
-          onClick={() => setRightPanelOpen(!rightPanelOpen)}
-        >
-          <PanelRightOpen className="h-4 w-4" />
+          {chatOpen ? (
+            <X className="h-4 w-4" />
+          ) : (
+            <MessageSquare className="h-4 w-4" />
+          )}
         </Button>
       </div>
 
       {/* Main area */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Left panel - Spatial Tree */}
-        {leftPanelOpen && (
-          <div className="w-64 shrink-0 border-r bg-background">
-            <div className="border-b p-3">
-              <h3 className="text-sm font-semibold">Structure</h3>
-            </div>
-            <SpatialTree
-              tree={spatialTree}
-              onSelect={handleTreeSelect}
-              selectedId={selectedElement?.expressID}
-            />
+        {/* Left panel - Spatial Tree (fixed) */}
+        <div className="w-64 shrink-0 border-r bg-background">
+          <div className="border-b p-3">
+            <h3 className="text-sm font-semibold">Structure</h3>
           </div>
-        )}
+          <SpatialTree
+            tree={spatialTree}
+            onSelect={handleTreeSelect}
+            selectedId={selectedElement?.expressID}
+          />
+        </div>
 
         {/* 3D Viewport */}
         <div className="relative flex-1">
@@ -209,7 +277,10 @@ export default function ViewerPage() {
           {loadError && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/80">
               <p className="text-sm text-destructive">{loadError}</p>
-              <Link href={`/dashboard/projects/${projectId}`} className="mt-4">
+              <Link
+                href={`/dashboard/projects/${projectId}`}
+                className="mt-4"
+              >
                 <Button variant="outline" size="sm">
                   Back to project
                 </Button>
@@ -218,31 +289,42 @@ export default function ViewerPage() {
           )}
 
           {/* Toolbar */}
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2">
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10">
             <ViewerToolbar
               wireframe={wireframe}
               xray={xray}
               clipping={clipping}
               clippingHeight={clippingHeight}
-              onToggleWireframe={handleToggleWireframe}
-              onToggleXRay={handleToggleXRay}
-              onToggleClipping={handleToggleClipping}
+              onToggleWireframe={() => handleToggleWireframe()}
+              onToggleXRay={() => handleToggleXRay()}
+              onToggleClipping={() => handleToggleClipping()}
               onClippingHeightChange={handleClippingHeightChange}
               onPresetView={(view) => setPresetView(view, modelRef.current)}
               onScreenshot={takeScreenshot}
               onResetView={handleResetView}
             />
           </div>
+
+          {/* AI Chat Panel (overlay on viewport) */}
+          {chatOpen && (
+            <div className="absolute right-0 top-0 z-20 h-full w-96 border-l bg-background/95 shadow-lg backdrop-blur-sm">
+              <ChatPanel
+                modelId={modelId}
+                modelContext={modelContext}
+                onCommand={handleAICommand}
+              />
+            </div>
+          )}
         </div>
 
-        {/* Right panel - Properties */}
-        {rightPanelOpen && (
+        {/* Right panel - Properties (fixed) */}
+        <div className="w-72 shrink-0 border-l bg-background">
           <PropertiesPanel
             selectedElement={selectedElement}
             modelStats={modelStats}
             onClearSelection={clearSelection}
           />
-        )}
+        </div>
       </div>
     </div>
   )
