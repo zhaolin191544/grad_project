@@ -4,6 +4,30 @@ import { db } from "@/lib/db"
 import { unlink } from "fs/promises"
 import path from "path"
 
+export async function GET(
+  _req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params
+  const session = await auth()
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  const model = await db.model.findFirst({
+    where: {
+      id,
+      project: { userId: session.user.id },
+    },
+  })
+
+  if (!model) {
+    return NextResponse.json({ error: "Model not found" }, { status: 404 })
+  }
+
+  return NextResponse.json(model)
+}
+
 export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -27,7 +51,8 @@ export async function DELETE(
 
   // Delete file from disk
   try {
-    const filePath = path.join(process.cwd(), model.fileUrl)
+    const fileUrl = model.fileUrl.replace("/api/uploads/", "")
+    const filePath = path.join(process.cwd(), "uploads", fileUrl)
     await unlink(filePath)
   } catch {
     // File may not exist, continue

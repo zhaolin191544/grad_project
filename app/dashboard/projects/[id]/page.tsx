@@ -11,7 +11,7 @@ import {
   Upload,
   Calendar,
   HardDrive,
-  Trash2,
+  Eye,
 } from "lucide-react"
 import { DeleteModelButton } from "./delete-model-button"
 
@@ -103,6 +103,15 @@ export default async function ProjectDetailPage({
                     {model.createdAt.toLocaleDateString()}
                   </Badge>
                 </div>
+                <Link
+                  href={`/dashboard/projects/${id}/viewer/${model.id}`}
+                  className="mt-4 block"
+                >
+                  <Button size="sm" className="w-full gap-2">
+                    <Eye className="h-3.5 w-3.5" />
+                    Open Viewer
+                  </Button>
+                </Link>
               </CardContent>
             </Card>
           ))}
