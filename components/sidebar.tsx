@@ -13,6 +13,7 @@ import {
   Menu,
   History,
   Gauge,
+  GitCompareArrows,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -48,6 +49,11 @@ const navItems = [
     title: "History",
     href: "/dashboard/history",
     icon: History,
+  },
+  {
+    title: "Model Diff",
+    href: "/dashboard/diff",
+    icon: GitCompareArrows,
   },
   {
     title: "Benchmark",

@@ -26,10 +26,15 @@ export async function GET(
     const ext = path.extname(filePath).toLowerCase()
     const contentType = MIME_TYPES[ext] || "application/octet-stream"
 
+    // IFC files must not be cached aggressively because they can be modified via save
+    const cacheControl = ext === ".ifc"
+      ? "no-cache, no-store, must-revalidate"
+      : "public, max-age=31536000, immutable"
+
     return new NextResponse(data, {
       headers: {
         "Content-Type": contentType,
-        "Cache-Control": "public, max-age=31536000, immutable",
+        "Cache-Control": cacheControl,
       },
     })
   } catch {

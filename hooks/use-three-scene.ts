@@ -12,6 +12,8 @@ export interface ThreeSceneContext {
   axesScene: THREE.Scene
   axesCamera: THREE.OrthographicCamera
   clippingPlane: THREE.Plane
+  /** When set, the animation loop uses this instead of direct renderer.render */
+  composerRender: (() => void) | null
 }
 
 export function useThreeScene(
@@ -29,7 +31,7 @@ export function useThreeScene(
 
     // Scene
     const scene = new THREE.Scene()
-    scene.background = null
+    scene.background = new THREE.Color(0xf1f5f9)
 
     // Camera
     const camera = new THREE.PerspectiveCamera(
@@ -86,6 +88,7 @@ export function useThreeScene(
       axesScene,
       axesCamera,
       clippingPlane,
+      composerRender: null,
     }
 
     // Animation loop
@@ -100,29 +103,61 @@ export function useThreeScene(
       axesCamera.position.copy(dir.multiplyScalar(-3))
       axesCamera.lookAt(0, 0, 0)
 
-      // Main viewport
-      renderer.setViewport(0, 0, container.clientWidth, container.clientHeight)
-      renderer.setScissor(0, 0, container.clientWidth, container.clientHeight)
-      renderer.setScissorTest(true)
-      renderer.clear()
-      renderer.render(scene, camera)
+      const ctx = ctxRef.current
+      if (ctx?.composerRender) {
+        // Use EffectComposer pipeline (SSAO, edge detection, etc.)
+        // Reset viewport to full canvas before composer renders
+        renderer.setViewport(0, 0, container.clientWidth, container.clientHeight)
+        renderer.setScissor(0, 0, container.clientWidth, container.clientHeight)
+        renderer.setScissorTest(false)
+        renderer.autoClear = true
+        ctx.composerRender()
+        renderer.autoClear = false
 
-      // Axes viewport (bottom-right)
-      const axesSize = 120
-      const margin = 16
-      renderer.setViewport(
-        container.clientWidth - axesSize - margin,
-        margin,
-        axesSize,
-        axesSize
-      )
-      renderer.setScissor(
-        container.clientWidth - axesSize - margin,
-        margin,
-        axesSize,
-        axesSize
-      )
-      renderer.render(axesScene, axesCamera)
+        // Axes overlay on top
+        const axesSize = 120
+        const margin = 16
+        renderer.setViewport(
+          container.clientWidth - axesSize - margin,
+          margin,
+          axesSize,
+          axesSize
+        )
+        renderer.setScissor(
+          container.clientWidth - axesSize - margin,
+          margin,
+          axesSize,
+          axesSize
+        )
+        renderer.setScissorTest(true)
+        renderer.clearDepth()
+        renderer.render(axesScene, axesCamera)
+        renderer.setScissorTest(false)
+      } else {
+        // Direct rendering
+        renderer.setViewport(0, 0, container.clientWidth, container.clientHeight)
+        renderer.setScissor(0, 0, container.clientWidth, container.clientHeight)
+        renderer.setScissorTest(true)
+        renderer.clear()
+        renderer.render(scene, camera)
+
+        // Axes viewport (bottom-right)
+        const axesSize = 120
+        const margin = 16
+        renderer.setViewport(
+          container.clientWidth - axesSize - margin,
+          margin,
+          axesSize,
+          axesSize
+        )
+        renderer.setScissor(
+          container.clientWidth - axesSize - margin,
+          margin,
+          axesSize,
+          axesSize
+        )
+        renderer.render(axesScene, axesCamera)
+      }
     }
     animate()
 

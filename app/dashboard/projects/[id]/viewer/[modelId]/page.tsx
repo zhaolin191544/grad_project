@@ -8,12 +8,18 @@ import { useModelContext } from "@/hooks/use-model-context"
 import { useQuantityStats } from "@/hooks/use-quantity-stats"
 import { useFPSMonitor } from "@/hooks/use-fps-monitor"
 import { usePerfTracker } from "@/hooks/use-perf-tracker"
+import { useRenderModes, type RenderMode, type HeatmapConfig } from "@/hooks/use-render-modes"
+import { useElementEditor } from "@/hooks/use-element-editor"
 import { ViewerToolbar } from "@/components/viewer/viewer-toolbar"
+import { RenderModeSwitcher } from "@/components/viewer/render-mode-switcher"
 import { PropertiesPanel } from "@/components/viewer/properties-panel"
+import { ElementEditor } from "@/components/viewer/element-editor"
+import { ExportToolbar } from "@/components/viewer/export-toolbar"
 import { SpatialTree } from "@/components/viewer/spatial-tree"
 import { ChatPanel, type ViewerCommand } from "@/components/chat/chat-panel"
 import { StatisticsPanel } from "@/components/viewer/statistics-panel"
 import { PerformancePanel } from "@/components/viewer/performance-panel"
+import { CompliancePanel } from "@/components/viewer/compliance-panel"
 import { Button } from "@/components/ui/button"
 import {
   ArrowLeft,
@@ -21,8 +27,11 @@ import {
   MessageSquare,
   BarChart3,
   Activity,
+  Shield,
+  Pencil,
   X,
 } from "lucide-react"
+import * as THREE from "three"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
 
@@ -56,13 +65,45 @@ export default function ViewerPage() {
     pickElement,
     highlightByExpressId,
     highlightByType,
+    highlightElements,
     clearSelection,
     setWireframe,
     setXRay,
     setClipping,
     elementTypeMap,
     dispose,
+    getIfcApi,
   } = useIFCLoader(ctxRef)
+
+  // Render modes
+  const {
+    activeMode,
+    initComposer,
+    resizeComposer,
+    applyMode,
+    applyHeatmap,
+    setSectionFill,
+    renderWithComposer,
+    hasComposer,
+  } = useRenderModes()
+
+  // Element editor
+  const {
+    editorState,
+    saving,
+    selectElement,
+    clearEditorSelection,
+    setTransformMode,
+    changeProperty,
+    deleteElement,
+    toggleHideElement,
+    duplicateElement,
+    undoLast,
+    exportGLTF,
+    exportOBJ,
+    exportIFC,
+    saveToServer,
+  } = useElementEditor(ctxRef, getIfcApi, modelRef, modelId)
 
   const [wireframe, setWireframeState] = useState(false)
   const [xray, setXRayState] = useState(false)
@@ -71,6 +112,8 @@ export default function ViewerPage() {
   const [chatOpen, setChatOpen] = useState(false)
   const [statsOpen, setStatsOpen] = useState(false)
   const [perfOpen, setPerfOpen] = useState(false)
+  const [complianceOpen, setComplianceOpen] = useState(false)
+  const [editMode, setEditMode] = useState(false)
   const [modelName, setModelName] = useState("")
   const [loadError, setLoadError] = useState("")
 
@@ -177,6 +220,101 @@ export default function ViewerPage() {
     }
   }, [modelId, ctxRef, loadModel, frameModel, dispose])
 
+  // Initialize EffectComposer after model is loaded
+  useEffect(() => {
+    const ctx = ctxRef.current
+    if (!ctx || loading || !modelRef.current) return
+    if (hasComposer()) return
+
+    const composer = initComposer(ctx)
+    if (composer) {
+      ctx.composerRender = () => composer.render()
+    }
+  }, [ctxRef, loading, modelRef, initComposer, hasComposer])
+
+  // Resize composer on window resize
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+    const observer = new ResizeObserver(() => {
+      const ctx = ctxRef.current
+      if (!ctx) return
+      resizeComposer(container.clientWidth, container.clientHeight, ctx.renderer.getPixelRatio())
+    })
+    observer.observe(container)
+    return () => observer.disconnect()
+  }, [ctxRef, resizeComposer])
+
+  // Handle render mode change
+  const handleModeChange = useCallback(
+    (mode: RenderMode) => {
+      const ctx = ctxRef.current
+      if (!ctx) return
+      applyMode(mode, ctx.scene)
+
+      // Sync wireframe/xray states
+      setWireframeState(mode === "wireframe")
+      setXRayState(mode === "xray")
+    },
+    [ctxRef, applyMode]
+  )
+
+  // Handle heatmap attribute change
+  const handleHeatmapChange = useCallback(
+    (attribute: "area" | "cost" | "volume") => {
+      const ctx = ctxRef.current
+      if (!ctx || !elementTypeMap || !modelRef.current) return
+
+      // Compute values per element
+      const values = new Map<number, number>()
+      let min = Infinity
+      let max = -Infinity
+
+      modelRef.current.traverse((child: any) => {
+        if (child.isMesh && child.name.startsWith("ifc-")) {
+          const eid = child.userData.expressID as number
+          if (eid === undefined) return
+
+          let val = 0
+          if (attribute === "area" && child.geometry) {
+            child.geometry.computeBoundingBox()
+            const bbox = child.geometry.boundingBox
+            if (bbox) {
+              const s = bbox.getSize(new THREE.Vector3())
+              val = 2 * (s.x * s.y + s.y * s.z + s.x * s.z)
+            }
+          } else if (attribute === "volume" && child.geometry) {
+            child.geometry.computeBoundingBox()
+            const bbox = child.geometry.boundingBox
+            if (bbox) {
+              const s = bbox.getSize(new THREE.Vector3())
+              val = s.x * s.y * s.z
+            }
+          } else if (attribute === "cost") {
+            // Use a simple cost model based on type
+            const info = elementTypeMap?.get(eid)
+            const type = info?.type?.toUpperCase() || ""
+            if (type.includes("WALL")) val = 500
+            else if (type.includes("SLAB")) val = 800
+            else if (type.includes("BEAM") || type.includes("COLUMN")) val = 1200
+            else if (type.includes("WINDOW")) val = 300
+            else if (type.includes("DOOR")) val = 250
+            else val = 100
+          }
+
+          values.set(eid, val)
+          if (val < min) min = val
+          if (val > max) max = val
+        }
+      })
+
+      if (values.size > 0) {
+        applyHeatmap(ctx.scene, { attribute, values, min, max })
+      }
+    },
+    [ctxRef, elementTypeMap, modelRef, applyHeatmap]
+  )
+
   // Click handler
   const handleCanvasClick = useCallback(
     (event: React.MouseEvent) => {
@@ -186,6 +324,13 @@ export default function ViewerPage() {
     },
     [pickElement]
   )
+
+  // Sync editor with element selection
+  useEffect(() => {
+    if (selectedElement && editMode) {
+      selectElement(selectedElement.expressID)
+    }
+  }, [selectedElement, editMode, selectElement])
 
   const handleToggleWireframe = useCallback(
     (force?: boolean) => {
@@ -295,6 +440,39 @@ export default function ViewerPage() {
         </span>
         <div className="flex-1" />
 
+        {/* Edit mode toggle */}
+        <Button
+          variant={editMode ? "default" : "ghost"}
+          size="icon"
+          className="h-8 w-8"
+          onClick={() => {
+            setEditMode(!editMode)
+            if (editMode) {
+              clearEditorSelection()
+              setTransformMode(null)
+            }
+          }}
+        >
+          {editMode ? <X className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
+        </Button>
+
+        {/* Compliance toggle */}
+        <Button
+          variant={complianceOpen ? "default" : "ghost"}
+          size="icon"
+          className="h-8 w-8"
+          onClick={() => {
+            setComplianceOpen(!complianceOpen)
+            if (!complianceOpen) { setChatOpen(false); setStatsOpen(false); setPerfOpen(false) }
+          }}
+        >
+          {complianceOpen ? (
+            <X className="h-4 w-4" />
+          ) : (
+            <Shield className="h-4 w-4" />
+          )}
+        </Button>
+
         {/* Performance toggle */}
         <Button
           variant={perfOpen ? "default" : "ghost"}
@@ -302,7 +480,7 @@ export default function ViewerPage() {
           className="h-8 w-8"
           onClick={() => {
             setPerfOpen(!perfOpen)
-            if (!perfOpen) { setChatOpen(false); setStatsOpen(false) }
+            if (!perfOpen) { setChatOpen(false); setStatsOpen(false); setComplianceOpen(false) }
           }}
         >
           {perfOpen ? (
@@ -319,7 +497,7 @@ export default function ViewerPage() {
           className="h-8 w-8"
           onClick={() => {
             setStatsOpen(!statsOpen)
-            if (!statsOpen) { setChatOpen(false); setPerfOpen(false) }
+            if (!statsOpen) { setChatOpen(false); setPerfOpen(false); setComplianceOpen(false) }
           }}
         >
           {statsOpen ? (
@@ -336,7 +514,7 @@ export default function ViewerPage() {
           className="h-8 w-8"
           onClick={() => {
             setChatOpen(!chatOpen)
-            if (!chatOpen) { setStatsOpen(false); setPerfOpen(false) }
+            if (!chatOpen) { setStatsOpen(false); setPerfOpen(false); setComplianceOpen(false) }
           }}
         >
           {chatOpen ? (
@@ -393,6 +571,26 @@ export default function ViewerPage() {
             </div>
           )}
 
+          {/* Render Mode Switcher */}
+          <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
+            <RenderModeSwitcher
+              activeMode={activeMode}
+              onModeChange={handleModeChange}
+              onHeatmapChange={handleHeatmapChange}
+              heatmapAttribute={activeMode === "heatmap" ? "area" : undefined}
+            />
+            {editMode && (
+              <ExportToolbar
+                onExportGLTF={exportGLTF}
+                onExportOBJ={exportOBJ}
+                onExportIFC={exportIFC}
+                onSave={saveToServer}
+                modificationCount={editorState.modifications.length}
+                saving={saving}
+              />
+            )}
+          </div>
+
           {/* Toolbar */}
           <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10">
             <ViewerToolbar
@@ -402,13 +600,50 @@ export default function ViewerPage() {
               clippingHeight={clippingHeight}
               onToggleWireframe={() => handleToggleWireframe()}
               onToggleXRay={() => handleToggleXRay()}
-              onToggleClipping={() => handleToggleClipping()}
-              onClippingHeightChange={handleClippingHeightChange}
+              onToggleClipping={() => {
+                handleToggleClipping()
+                setSectionFill(!clipping, clippingHeight)
+              }}
+              onClippingHeightChange={(h) => {
+                handleClippingHeightChange(h)
+                setSectionFill(true, h)
+              }}
               onPresetView={(view) => setPresetView(view, modelRef.current)}
               onScreenshot={takeScreenshot}
               onResetView={handleResetView}
             />
           </div>
+
+          {/* Compliance Panel (overlay on viewport) */}
+          {complianceOpen && (
+            <div className="absolute right-0 top-0 z-20 h-full w-96 border-l bg-background/95 shadow-lg backdrop-blur-sm">
+              <CompliancePanel
+                getIfcApi={getIfcApi}
+                elementTypeMap={elementTypeMap}
+                onHighlightElements={highlightElements}
+                onHighlightElement={highlightByExpressId}
+                onAIGenerateRule={async (prompt) => {
+                  try {
+                    const res = await fetch("/api/compliance", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ prompt }),
+                    })
+                    if (!res.ok) throw new Error("Failed")
+                    const { rules } = await res.json()
+                    if (rules?.length > 0) {
+                      // Dispatch event to add rules to the panel
+                      window.dispatchEvent(
+                        new CustomEvent("compliance-add-rules", { detail: { rules } })
+                      )
+                    }
+                  } catch (err) {
+                    console.error("AI rule generation failed:", err)
+                  }
+                }}
+              />
+            </div>
+          )}
 
           {/* Performance Panel (overlay on viewport) */}
           {perfOpen && (
@@ -451,14 +686,46 @@ export default function ViewerPage() {
           )}
         </div>
 
-        {/* Right panel - Properties (fixed) */}
+        {/* Right panel - Properties or Editor (fixed) */}
         <div className="w-72 shrink-0 border-l bg-background">
-          <PropertiesPanel
-            selectedElement={selectedElement}
-            modelStats={modelStats}
-            modelId={modelId}
-            onClearSelection={clearSelection}
-          />
+          {editMode ? (
+            <ElementEditor
+              selectedElement={selectedElement}
+              properties={editorState.properties}
+              transformMode={editorState.transformMode}
+              onTransformModeChange={setTransformMode}
+              onPropertyChange={(key, value) => {
+                if (selectedElement) changeProperty(selectedElement.expressID, key, value)
+              }}
+              onDeleteElement={() => {
+                if (selectedElement) {
+                  deleteElement(selectedElement.expressID)
+                  clearSelection()
+                  clearEditorSelection()
+                }
+              }}
+              onHideElement={() => {
+                if (selectedElement) toggleHideElement(selectedElement.expressID)
+              }}
+              onDuplicateElement={() => {
+                if (selectedElement) duplicateElement(selectedElement.expressID)
+              }}
+              onUndoLast={undoLast}
+              hiddenElements={editorState.hiddenElements}
+              modifications={editorState.modifications}
+              onClearSelection={() => {
+                clearSelection()
+                clearEditorSelection()
+              }}
+            />
+          ) : (
+            <PropertiesPanel
+              selectedElement={selectedElement}
+              modelStats={modelStats}
+              modelId={modelId}
+              onClearSelection={clearSelection}
+            />
+          )}
         </div>
       </div>
     </div>

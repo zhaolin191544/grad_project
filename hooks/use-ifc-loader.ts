@@ -454,6 +454,52 @@ export function useIFCLoader(ctxRef: React.RefObject<ThreeSceneContext | null>) 
     [ctxRef, elementTypeMap]
   )
 
+  const highlightElements = useCallback(
+    (expressIDs: number[], color?: THREE.Color) => {
+      const ctx = ctxRef.current
+      const data = modelDataRef.current
+      if (!ctx || !data) return
+
+      // Remove previous highlight
+      clearHighlight(ctx)
+
+      const mat = color
+        ? new THREE.MeshLambertMaterial({
+            transparent: true,
+            opacity: 0.7,
+            color,
+            depthTest: false,
+          })
+        : new THREE.MeshLambertMaterial({
+            transparent: true,
+            opacity: 0.7,
+            color: 0xff4444,
+            depthTest: false,
+          })
+
+      const group = new THREE.Group()
+      expressIDs.forEach((eid) => {
+        const mesh = data.expressIdToMesh.get(eid)
+        if (mesh) {
+          const clone = new THREE.Mesh(mesh.geometry, mat)
+          clone.position.copy(mesh.position)
+          clone.rotation.copy(mesh.rotation)
+          clone.scale.copy(mesh.scale)
+          clone.matrix.copy(mesh.matrix)
+          clone.matrixAutoUpdate = false
+          clone.renderOrder = 1
+          group.add(clone)
+        }
+      })
+
+      if (group.children.length > 0) {
+        ctx.scene.add(group)
+        highlightMeshRef.current = group as unknown as THREE.Mesh
+      }
+    },
+    [ctxRef]
+  )
+
   const dispose = useCallback(() => {
     const data = modelDataRef.current
     if (data) {
@@ -467,6 +513,12 @@ export function useIFCLoader(ctxRef: React.RefObject<ThreeSceneContext | null>) 
     modelDataRef.current = null
     modelRef.current = null
     highlightMeshRef.current = null
+  }, [])
+
+  const getIfcApi = useCallback(() => {
+    const data = modelDataRef.current
+    if (!data) return null
+    return { ifcApi: data.ifcApi, modelID: data.modelID }
   }, [])
 
   return {
@@ -485,8 +537,10 @@ export function useIFCLoader(ctxRef: React.RefObject<ThreeSceneContext | null>) 
     setXRay,
     setClipping,
     highlightByType,
+    highlightElements,
     elementTypeMap,
     dispose,
+    getIfcApi,
   }
 }
 
@@ -544,13 +598,17 @@ function buildSpatialTree(ifcApi: any, modelID: number, WebIFC: any): SpatialNod
           if (elements) {
             for (let j = 0; j < elements.length; j++) {
               const elemID = elements[j].value
-              const elem = ifcApi.GetLine(modelID, elemID)
-              const typeName = ifcApi.GetNameFromTypeCode(elem.type) || "Unknown"
-              children.push({
-                expressID: elemID,
-                type: typeName.toUpperCase(),
-                children: [],
-              })
+              try {
+                const elem = ifcApi.GetLine(modelID, elemID)
+                const typeName = ifcApi.GetNameFromTypeCode(elem.type) || "Unknown"
+                children.push({
+                  expressID: elemID,
+                  type: typeName.toUpperCase(),
+                  children: [],
+                })
+              } catch {
+                // Element may have been deleted — skip
+              }
             }
           }
         }

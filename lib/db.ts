@@ -8,8 +8,7 @@ const globalForPrisma = globalThis as unknown as {
 }
 
 function createPrismaClient() {
-  const connectionString =
-    process.env.DIRECT_DATABASE_URL || process.env.DATABASE_URL || ""
+  const connectionString = process.env.DATABASE_URL || ""
 
   const pool = new pg.Pool({ connectionString })
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
