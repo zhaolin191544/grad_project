@@ -20,6 +20,11 @@ import { ChatPanel, type ViewerCommand } from "@/components/chat/chat-panel"
 import { StatisticsPanel } from "@/components/viewer/statistics-panel"
 import { PerformancePanel } from "@/components/viewer/performance-panel"
 import { CompliancePanel } from "@/components/viewer/compliance-panel"
+import { OnlineUsers } from "@/components/viewer/online-users"
+import { RemoteCursorsOverlay, useRemoteSelections } from "@/components/viewer/remote-cursors"
+import { CollaborationPanel } from "@/components/viewer/collaboration-panel"
+import { CollaborationRoom } from "@/components/viewer/liveblocks-room"
+import { useCollaboration } from "@/hooks/use-collaboration"
 import { Button } from "@/components/ui/button"
 import {
   ArrowLeft,
@@ -29,13 +34,15 @@ import {
   Activity,
   Shield,
   Pencil,
+  Users,
   X,
 } from "lucide-react"
 import * as THREE from "three"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
 
-export default function ViewerPage() {
+// Inner component that uses Liveblocks hooks (must be inside RoomProvider)
+function ViewerInner() {
   const params = useParams()
   const projectId = params.id as string
   const modelId = params.modelId as string
@@ -114,8 +121,41 @@ export default function ViewerPage() {
   const [perfOpen, setPerfOpen] = useState(false)
   const [complianceOpen, setComplianceOpen] = useState(false)
   const [editMode, setEditMode] = useState(false)
+  const [collabOpen, setCollabOpen] = useState(false)
   const [modelName, setModelName] = useState("")
   const [loadError, setLoadError] = useState("")
+
+  // Real-time collaboration (Phase 6 - Liveblocks)
+  const {
+    connected: collabConnected,
+    onlineUsers,
+    remoteCursors,
+    remoteSelections,
+    annotations,
+    sendCursor,
+    clearCursor,
+    sendSelection,
+    sendAnnotation,
+    currentUserId,
+  } = useCollaboration()
+
+  // Render remote user selections in 3D scene
+  useRemoteSelections(
+    ctxRef,
+    remoteSelections,
+    onlineUsers,
+    useCallback(() => {
+      const model = modelRef.current
+      if (!model) return null
+      const map = new Map<number, THREE.Mesh>()
+      model.traverse((child: any) => {
+        if (child.isMesh && child.userData.expressID !== undefined) {
+          map.set(child.userData.expressID, child)
+        }
+      })
+      return map
+    }, [modelRef])
+  )
 
   // Quantity statistics for Phase 4
   const quantityData = useQuantityStats(spatialTree, elementTypeMap, modelRef)
@@ -332,6 +372,44 @@ export default function ViewerPage() {
     }
   }, [selectedElement, editMode, selectElement])
 
+  // Sync selection to collaboration
+  useEffect(() => {
+    sendSelection(selectedElement?.expressID ?? null)
+  }, [selectedElement, sendSelection])
+
+  // Track mouse for collaboration cursors
+  const handleMouseMove = useCallback(
+    (event: React.MouseEvent) => {
+      const container = containerRef.current
+      if (!container) return
+
+      const rect = container.getBoundingClientRect()
+      const x = (event.clientX - rect.left) / rect.width
+      const y = (event.clientY - rect.top) / rect.height
+
+      // Also raycast to get 3D world position
+      const ctx = ctxRef.current
+      if (ctx) {
+        const mouse = new THREE.Vector2(x * 2 - 1, -(y * 2 - 1))
+        const raycaster = new THREE.Raycaster()
+        raycaster.setFromCamera(mouse, ctx.camera)
+        const intersects = modelRef.current
+          ? raycaster.intersectObject(modelRef.current, true)
+          : []
+
+        if (intersects.length > 0) {
+          const pt = intersects[0].point
+          sendCursor({ x, y, worldX: pt.x, worldY: pt.y, worldZ: pt.z })
+        } else {
+          sendCursor({ x, y })
+        }
+      } else {
+        sendCursor({ x, y })
+      }
+    },
+    [containerRef, ctxRef, modelRef, sendCursor]
+  )
+
   const handleToggleWireframe = useCallback(
     (force?: boolean) => {
       const next = force !== undefined ? force : !wireframe
@@ -438,7 +516,32 @@ export default function ViewerPage() {
         <span className="text-sm font-medium truncate">
           {modelName || "Loading..."}
         </span>
+
+        {/* Online users indicator */}
+        <OnlineUsers
+          users={onlineUsers}
+          currentUserId={currentUserId}
+          connected={collabConnected}
+        />
+
         <div className="flex-1" />
+
+        {/* Collaboration toggle */}
+        <Button
+          variant={collabOpen ? "default" : "ghost"}
+          size="icon"
+          className="h-8 w-8"
+          onClick={() => {
+            setCollabOpen(!collabOpen)
+            if (!collabOpen) { setChatOpen(false); setStatsOpen(false); setPerfOpen(false); setComplianceOpen(false) }
+          }}
+        >
+          {collabOpen ? (
+            <X className="h-4 w-4" />
+          ) : (
+            <Users className="h-4 w-4" />
+          )}
+        </Button>
 
         {/* Edit mode toggle */}
         <Button
@@ -545,6 +648,14 @@ export default function ViewerPage() {
             ref={containerRef}
             className="h-full w-full bg-gradient-to-b from-slate-100 to-slate-200 dark:from-slate-900 dark:to-slate-800"
             onClick={handleCanvasClick}
+            onMouseMove={handleMouseMove}
+            onMouseLeave={clearCursor}
+          />
+
+          {/* Remote user cursors */}
+          <RemoteCursorsOverlay
+            remoteCursors={remoteCursors}
+            containerRef={containerRef}
           />
 
           {/* Loading overlay */}
@@ -672,6 +783,19 @@ export default function ViewerPage() {
             </div>
           )}
 
+          {/* Collaboration Panel (overlay on viewport) */}
+          {collabOpen && (
+            <div className="absolute right-0 top-0 z-20 h-full w-80 border-l bg-background/95 shadow-lg backdrop-blur-sm">
+              <CollaborationPanel
+                onlineUsers={onlineUsers}
+                currentUserId={currentUserId}
+                annotations={annotations}
+                onAddAnnotation={sendAnnotation}
+                selectedElementId={selectedElement?.expressID?.toString()}
+              />
+            </div>
+          )}
+
           {/* AI Chat Panel (overlay on viewport) */}
           {chatOpen && (
             <div className="absolute right-0 top-0 z-20 h-full w-96 border-l bg-background/95 shadow-lg backdrop-blur-sm">
@@ -729,5 +853,17 @@ export default function ViewerPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+// Page wrapper: provides Liveblocks room context
+export default function ViewerPage() {
+  const params = useParams() as { modelId: string }
+  const modelId = params.modelId
+
+  return (
+    <CollaborationRoom modelId={modelId}>
+      <ViewerInner />
+    </CollaborationRoom>
   )
 }
